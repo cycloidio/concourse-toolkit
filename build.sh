@@ -1,0 +1,10 @@
+#!/bin/bash
+
+export GOPATH=$PWD
+export PATH=$PATH:$GOPATH/bin
+
+# Cleanup
+rm -rf $GOPATH/bin
+
+# Static build :
+CGO_ENABLED=0 GOOS=linux go build -o bin/concourse-toolkit main.go

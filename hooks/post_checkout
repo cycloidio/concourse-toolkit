@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+
+echo "------ HOOK START - POST_CHECKOUT -------"
+# printenv
+echo "Use tag :"
+git describe --tags --abbrev=0 $GIT_SHA1 | tee -a TAG
+
+echo "------ HOOK END - POST_CHECKOUT -------"
