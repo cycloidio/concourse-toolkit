@@ -152,7 +152,6 @@ func NewMetrics() *PrometheusMetrics {
 			"name",
 			"version",
 			"state",
-			"activeContainers",
 			"team",
 			"start_time",
 			"platform",
@@ -454,14 +453,13 @@ func metricWorkers(promMetrics *PrometheusMetrics, dbConn db.Conn) {
 	workers, _ := dbWorkerFactory.Workers()
 	for _, worker := range workers {
 		promMetrics.workers.With(prometheus.Labels{
-			"name":             worker.Name(),
-			"version":          *worker.Version(),
-			"state":            string(worker.State()),
-			"activeContainers": strconv.Itoa(worker.ActiveContainers()),
-			"team":             worker.TeamName(),
-			"start_time":       strconv.FormatInt(worker.StartTime(), 10),
-			"platform":         worker.Platform(),
-			"tags":             strings.Join(worker.Tags(), ","),
+			"name":       worker.Name(),
+			"version":    *worker.Version(),
+			"state":      string(worker.State()),
+			"team":       worker.TeamName(),
+			"start_time": strconv.FormatInt(worker.StartTime(), 10),
+			"platform":   worker.Platform(),
+			"tags":       strings.Join(worker.Tags(), ","),
 		}).Set(float64(worker.ActiveContainers()))
 
 	}
