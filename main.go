@@ -44,18 +44,6 @@ type PrometheusMetrics struct {
 
 func NewMetrics() *PrometheusMetrics {
 
-	// buildsErrored := prometheus.NewGauge(prometheus.GaugeOpts{
-	// 	Namespace:   "concourse_toolkit",
-	// 	Subsystem:   "builds",
-	// 	Name:        "errored",
-	// 	Help:        "Total number of Concourse builds errored.",
-	// 	ConstLabels: prometheus.Labels{"foo": "bar"},
-	// })
-	// prometheus.MustRegister(buildsErrored)
-	// Add values
-	// buildsErrored.Set(42)
-	// fmt.Println(buildsErrored.Desc())
-
 	builds := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "concourse_toolkit",
@@ -182,8 +170,8 @@ func (cmd *MyATCCommand) constructLockConn(driverName string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	dbConn.SetMaxOpenConns(1)
-	dbConn.SetMaxIdleConns(1)
+	dbConn.SetMaxOpenConns(10)
+	dbConn.SetMaxIdleConns(2)
 	dbConn.SetConnMaxLifetime(0)
 
 	return dbConn, nil

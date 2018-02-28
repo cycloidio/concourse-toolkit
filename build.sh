@@ -7,4 +7,7 @@ export PATH=$PATH:$GOPATH/bin
 rm -rf $GOPATH/bin
 
 # Static build :
-CGO_ENABLED=0 GOOS=linux go build -o bin/concourse-toolkit main.go
+#CGO_ENABLED=0 GOOS=linux go build -o bin/concourse-toolkit main.go
+
+# build
+go build -o bin/concourse-toolkit main.go

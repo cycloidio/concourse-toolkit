@@ -2,12 +2,12 @@
 # Build
 
 ```bash
-export VERSION=3.9.0
+export VERSION=3.9.1
 wget -O concourse.tar.gz https://github.com/concourse/concourse/releases/download/v${VERSION}/concourse-${VERSION}.tgz
 mkdir -p concourse && tar xf concourse.tar.gz -C concourse
+mkdir -p mkdir src && tar xf concourse/packages/atc.tgz -C src/
 go get "github.com/spf13/cobra"
 go get "github.com/spf13/viper"
-mkdir -p mkdir src && tar xf concourse/packages/atc.tgz -C src/
 rm -rf concourse concourse.tar.gz
 
 ./build.sh
