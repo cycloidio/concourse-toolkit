@@ -56,6 +56,7 @@ func NewMetrics() *PrometheusMetrics {
 			"team",
 			"pipeline",
 			"job",
+			"pipeline_paused",
 			"start_time",
 			"end_time",
 			"status",
@@ -75,6 +76,7 @@ func NewMetrics() *PrometheusMetrics {
 		[]string{
 			"team",
 			"pipeline",
+			"pipeline_paused",
 			"type",
 			"failing_to_check",
 			"name",
@@ -374,6 +376,7 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn db.Conn, lo
 				promMetrics.resources.With(prometheus.Labels{
 					"team":             pipeline.TeamName(),
 					"pipeline":         resource.PipelineName(),
+					"pipeline_paused":  strconv.FormatBool(pipeline.Paused()),
 					"type":             resource.Type(),
 					"failing_to_check": strconv.FormatBool(resource.FailingToCheck()),
 					"name":             resource.Name(),
@@ -398,13 +401,14 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn db.Conn, lo
 					// fmt.Println("  -  NextBuild (Running)", job.Name(), nextBuild.Name(), nextBuild.Status())
 					floatBuildName, _ := strconv.ParseFloat(nextBuild.Name(), 64)
 					promMetrics.builds.With(prometheus.Labels{
-						"team":       job.TeamName(),
-						"pipeline":   job.PipelineName(),
-						"job":        job.Name(),
-						"status":     string(nextBuild.Status()),
-						"start_time": nextBuild.StartTime().String(),
-						"end_time":   nextBuild.EndTime().String(),
-						"name":       nextBuild.Name(),
+						"team":            job.TeamName(),
+						"pipeline":        job.PipelineName(),
+						"pipeline_paused": strconv.FormatBool(pipeline.Paused()),
+						"job":             job.Name(),
+						"status":          string(nextBuild.Status()),
+						"start_time":      nextBuild.StartTime().String(),
+						"end_time":        nextBuild.EndTime().String(),
+						"name":            nextBuild.Name(),
 					}).Set(floatBuildName)
 				}
 
@@ -413,13 +417,14 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn db.Conn, lo
 					// fmt.Println("  - ", job.Name(), build.Name(), build.Status())
 					floatBuildName, _ := strconv.ParseFloat(build.Name(), 64)
 					promMetrics.builds.With(prometheus.Labels{
-						"team":       job.TeamName(),
-						"pipeline":   job.PipelineName(),
-						"job":        job.Name(),
-						"status":     string(build.Status()),
-						"start_time": build.StartTime().String(),
-						"end_time":   build.EndTime().String(),
-						"name":       build.Name(),
+						"team":            job.TeamName(),
+						"pipeline":        job.PipelineName(),
+						"pipeline_paused": strconv.FormatBool(pipeline.Paused()),
+						"job":             job.Name(),
+						"status":          string(build.Status()),
+						"start_time":      build.StartTime().String(),
+						"end_time":        build.EndTime().String(),
+						"name":            build.Name(),
 					}).Set(floatBuildName)
 
 				}
@@ -432,13 +437,14 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn db.Conn, lo
 						// fmt.Println("  -  Pending ", job.Name(), pendingBuild.Name(), pendingBuild.Status())
 						floatBuildName, _ := strconv.ParseFloat(pendingBuild.Name(), 64)
 						promMetrics.builds.With(prometheus.Labels{
-							"team":       job.TeamName(),
-							"pipeline":   job.PipelineName(),
-							"job":        job.Name(),
-							"status":     string(pendingBuild.Status()),
-							"start_time": pendingBuild.StartTime().String(),
-							"end_time":   pendingBuild.EndTime().String(),
-							"name":       pendingBuild.Name(),
+							"team":            job.TeamName(),
+							"pipeline":        job.PipelineName(),
+							"pipeline_paused": strconv.FormatBool(pipeline.Paused()),
+							"job":             job.Name(),
+							"status":          string(pendingBuild.Status()),
+							"start_time":      pendingBuild.StartTime().String(),
+							"end_time":        pendingBuild.EndTime().String(),
+							"name":            pendingBuild.Name(),
 						}).Set(floatBuildName)
 
 					}
