@@ -241,6 +241,10 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn db.Conn, lo
 	creatingContainer, createdContainer, destroyingContainer, _ := dbContainerRepository.FindOrphanedContainers()
 	var defaultTeam = ""
 
+	// As our metrics are a relative status of current state. Reset all old metrics declared during
+	// the previous iteration
+	promMetrics.orphanedContainers.Reset()
+
 	for _, container := range failedContainers {
 		team := defaultTeam
 		if container.Metadata().BuildID != 0 {
@@ -317,6 +321,11 @@ func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn db.Conn, lockFact
 	teamFactory := db.NewTeamFactory(dbConn, lockFactory)
 
 	builds, _ := dbBuildFactory.GetAllStartedBuilds()
+
+	// As our metrics are a relative status of current state. Reset all old metrics declared during
+	// the previous iteration
+	promMetrics.runningTasks.Reset()
+
 	for _, build := range builds {
 		team := teamFactory.GetByID(build.TeamID())
 		containers, _ := team.FindContainersByMetadata(db.ContainerMetadata{PipelineID: build.PipelineID(), JobID: build.JobID(), BuildID: build.ID()})
@@ -340,8 +349,13 @@ func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn db.Conn, lockFact
 func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn db.Conn, lockFactory lock.LockFactory) {
 
 	teamFactory := db.NewTeamFactory(dbConn, lockFactory)
-
 	teams, _ := teamFactory.GetTeams()
+
+	// As our metrics are a relative status of current state. Reset all old metrics declared during
+	// the previous iteration
+	promMetrics.resources.Reset()
+	promMetrics.builds.Reset()
+
 	for _, team := range teams {
 
 		pipelines, _ := team.Pipelines()
@@ -437,8 +451,12 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn db.Conn, lo
 func metricWorkers(promMetrics *PrometheusMetrics, dbConn db.Conn) {
 
 	dbWorkerFactory := db.NewWorkerFactory(dbConn)
-
 	workers, _ := dbWorkerFactory.Workers()
+
+	// As our metrics are a relative status of current state. Reset all old metrics declared during
+	// the previous iteration
+	promMetrics.workers.Reset()
+
 	for _, worker := range workers {
 		promMetrics.workers.With(prometheus.Labels{
 			"name":       worker.Name(),
@@ -462,15 +480,6 @@ func getSomeMetrics(promMetrics *PrometheusMetrics, dbConn db.Conn, lockFactory 
 
 func run(cmd *cobra.Command, args []string) {
 	dbConn, lockFactory := connectDb()
-	//Init DB connect
-	// ShowPipelines(dbConn, lockFactory)
-	// ShowTeams(dbConn, lockFactory)
-	// fmt.Println("")
-	// ShowContainers(dbConn, lockFactory)
-	// fmt.Println("")
-	// ShowBuilds(dbConn, lockFactory)
-
-	promMetrics := NewMetrics()
 
 	fmt.Printf("DEBUG : Exposing metrics on http://0.0.0.0:%s/metrics\n", viper.GetString("metrics-port"))
 	config := &PrometheusConfig{BindIP: "0.0.0.0", BindPort: viper.GetString("metrics-port")}
@@ -481,6 +490,8 @@ func run(cmd *cobra.Command, args []string) {
 
 	// go http.Serve(listener, promhttp.Handler())
 	go http.Serve(listener, promhttp.Handler())
+
+	promMetrics := NewMetrics()
 
 	for {
 		getSomeMetrics(promMetrics, dbConn, lockFactory)
