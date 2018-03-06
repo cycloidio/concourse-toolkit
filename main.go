@@ -256,8 +256,14 @@ func (tx *dbTx) QueryRow(query string, args ...interface{}) squirrel.RowScanner 
 func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
 	dbContainerRepository := atcDb.NewContainerRepository(dbConn)
 	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory)
-	failedContainers, _ := dbContainerRepository.FindFailedContainers()
-	creatingContainer, createdContainer, destroyingContainer, _ := dbContainerRepository.FindOrphanedContainers()
+	failedContainers, err := dbContainerRepository.FindFailedContainers()
+	if err != nil {
+		fmt.Println("dbContainerRepository.FindFailedContainers: %s\n", err.Error())
+	}
+	creatingContainer, createdContainer, destroyingContainer, err := dbContainerRepository.FindOrphanedContainers()
+	if err != nil {
+		fmt.Println("dbContainerRepository.FindOrphanedContainers: %s\n", err.Error())
+	}
 	var defaultTeam = ""
 
 	// As our metrics are a relative status of current state. Reset all old metrics declared during
@@ -267,7 +273,10 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	for _, container := range failedContainers {
 		team := defaultTeam
 		if container.Metadata().BuildID != 0 {
-			build, _, _ := dbBuildFactory.Build(container.Metadata().BuildID)
+			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
+			if err != nil {
+				fmt.Println("dbBuildFactory.Build: %s\n", err.Error())
+			}
 			team = build.TeamName()
 		}
 		promMetrics.orphanedContainers.With(prometheus.Labels{
@@ -284,7 +293,10 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	for _, container := range creatingContainer {
 		team := defaultTeam
 		if container.Metadata().BuildID != 0 {
-			build, _, _ := dbBuildFactory.Build(container.Metadata().BuildID)
+			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
+			if err != nil {
+				fmt.Println("dbBuildFactory.Build: %s\n", err.Error())
+			}
 			team = build.TeamName()
 		}
 		promMetrics.orphanedContainers.With(prometheus.Labels{
@@ -301,7 +313,10 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	for _, container := range createdContainer {
 		team := defaultTeam
 		if container.Metadata().BuildID != 0 {
-			build, _, _ := dbBuildFactory.Build(container.Metadata().BuildID)
+			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
+			if err != nil {
+				fmt.Println("dbBuildFactory.Build: %s\n", err.Error())
+			}
 			team = build.TeamName()
 		}
 		promMetrics.orphanedContainers.With(prometheus.Labels{
@@ -319,7 +334,10 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	for _, container := range destroyingContainer {
 		team := defaultTeam
 		if container.Metadata().BuildID != 0 {
-			build, _, _ := dbBuildFactory.Build(container.Metadata().BuildID)
+			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
+			if err != nil {
+				fmt.Println("dbBuildFactory.Build: %s\n", err.Error())
+			}
 			team = build.TeamName()
 		}
 		promMetrics.orphanedContainers.With(prometheus.Labels{
@@ -339,15 +357,20 @@ func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockF
 	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory)
 	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
 
-	builds, _ := dbBuildFactory.GetAllStartedBuilds()
-
+	builds, err := dbBuildFactory.GetAllStartedBuilds()
+	if err != nil {
+		fmt.Println("dbBuildFactory.GetAllStartedBuilds: %s\n", err.Error())
+	}
 	// As our metrics are a relative status of current state. Reset all old metrics declared during
 	// the previous iteration
 	promMetrics.runningTasks.Reset()
 
 	for _, build := range builds {
 		team := teamFactory.GetByID(build.TeamID())
-		containers, _ := team.FindContainersByMetadata(atcDb.ContainerMetadata{PipelineID: build.PipelineID(), JobID: build.JobID(), BuildID: build.ID()})
+		containers, err := team.FindContainersByMetadata(atcDb.ContainerMetadata{PipelineID: build.PipelineID(), JobID: build.JobID(), BuildID: build.ID()})
+		if err != nil {
+			fmt.Println("team.FindContainersByMetadata: %s\n", err.Error())
+		}
 		for _, container := range containers {
 			promMetrics.runningTasks.With(prometheus.Labels{
 				"team":         build.TeamName(),
@@ -368,8 +391,10 @@ func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockF
 func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
 
 	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
-	teams, _ := teamFactory.GetTeams()
-
+	teams, err := teamFactory.GetTeams()
+	if err != nil {
+		fmt.Println("atcDb.NewTeamFactory: %s\n", err.Error())
+	}
 	// As our metrics are a relative status of current state. Reset all old metrics declared during
 	// the previous iteration
 	promMetrics.resources.Reset()
@@ -377,12 +402,15 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 
 	for _, team := range teams {
 
-		pipelines, _ := team.Pipelines()
+		pipelines, err := team.Pipelines()
+		if err != nil {
+			fmt.Println("team.Pipelines: %s\n", err.Error())
+		}
 		for _, pipeline := range pipelines {
 
 			resources, err := pipeline.Resources()
 			if err != nil {
-				fmt.Println(err)
+				fmt.Println("pipeline.Resources: %s\n", err.Error())
 				continue
 			}
 			for _, resource := range resources {
@@ -447,7 +475,10 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 				}
 
 				// Get pending builds
-				pendingBuilds, _ := job.GetPendingBuilds()
+				pendingBuilds, err := job.GetPendingBuilds()
+				if err != nil {
+					fmt.Println("job.GetPendingBuilds: %s\n", err.Error())
+				}
 				for _, pendingBuild := range pendingBuilds {
 					if pendingBuild != nil {
 						// No last build status
@@ -474,8 +505,10 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 func metricWorkers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn) {
 
 	dbWorkerFactory := atcDb.NewWorkerFactory(dbConn)
-	workers, _ := dbWorkerFactory.Workers()
-
+	workers, err := dbWorkerFactory.Workers()
+	if err != nil {
+		fmt.Println("dbWorkerFactory.Workers: %s\n", err.Error())
+	}
 	// As our metrics are a relative status of current state. Reset all old metrics declared during
 	// the previous iteration
 	promMetrics.workers.Reset()
