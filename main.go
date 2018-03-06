@@ -258,11 +258,11 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory)
 	failedContainers, err := dbContainerRepository.FindFailedContainers()
 	if err != nil {
-		fmt.Println("dbContainerRepository.FindFailedContainers: %s\n", err.Error())
+		fmt.Println("dbContainerRepository.FindFailedContainers:\n", err.Error())
 	}
 	creatingContainer, createdContainer, destroyingContainer, err := dbContainerRepository.FindOrphanedContainers()
 	if err != nil {
-		fmt.Println("dbContainerRepository.FindOrphanedContainers: %s\n", err.Error())
+		fmt.Println("dbContainerRepository.FindOrphanedContainers:\n", err.Error())
 	}
 	var defaultTeam = ""
 
@@ -275,7 +275,7 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 		if container.Metadata().BuildID != 0 {
 			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
 			if err != nil {
-				fmt.Println("dbBuildFactory.Build: %s\n", err.Error())
+				fmt.Println("dbBuildFactory.Build:\n", err.Error())
 			}
 			team = build.TeamName()
 		}
@@ -295,7 +295,7 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 		if container.Metadata().BuildID != 0 {
 			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
 			if err != nil {
-				fmt.Println("dbBuildFactory.Build: %s\n", err.Error())
+				fmt.Println("dbBuildFactory.Build:\n", err.Error())
 			}
 			team = build.TeamName()
 		}
@@ -315,7 +315,7 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 		if container.Metadata().BuildID != 0 {
 			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
 			if err != nil {
-				fmt.Println("dbBuildFactory.Build: %s\n", err.Error())
+				fmt.Println("dbBuildFactory.Build:\n", err.Error())
 			}
 			team = build.TeamName()
 		}
@@ -336,7 +336,7 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 		if container.Metadata().BuildID != 0 {
 			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
 			if err != nil {
-				fmt.Println("dbBuildFactory.Build: %s\n", err.Error())
+				fmt.Println("dbBuildFactory.Build:\n", err.Error())
 			}
 			team = build.TeamName()
 		}
@@ -359,7 +359,7 @@ func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockF
 
 	builds, err := dbBuildFactory.GetAllStartedBuilds()
 	if err != nil {
-		fmt.Println("dbBuildFactory.GetAllStartedBuilds: %s\n", err.Error())
+		fmt.Println("dbBuildFactory.GetAllStartedBuilds:\n", err.Error())
 	}
 	// As our metrics are a relative status of current state. Reset all old metrics declared during
 	// the previous iteration
@@ -369,7 +369,7 @@ func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockF
 		team := teamFactory.GetByID(build.TeamID())
 		containers, err := team.FindContainersByMetadata(atcDb.ContainerMetadata{PipelineID: build.PipelineID(), JobID: build.JobID(), BuildID: build.ID()})
 		if err != nil {
-			fmt.Println("team.FindContainersByMetadata: %s\n", err.Error())
+			fmt.Println("team.FindContainersByMetadata:\n", err.Error())
 		}
 		for _, container := range containers {
 			promMetrics.runningTasks.With(prometheus.Labels{
@@ -393,7 +393,7 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
 	teams, err := teamFactory.GetTeams()
 	if err != nil {
-		fmt.Println("atcDb.NewTeamFactory: %s\n", err.Error())
+		fmt.Println("atcDb.NewTeamFactory:\n", err.Error())
 	}
 	// As our metrics are a relative status of current state. Reset all old metrics declared during
 	// the previous iteration
@@ -404,13 +404,13 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 
 		pipelines, err := team.Pipelines()
 		if err != nil {
-			fmt.Println("team.Pipelines: %s\n", err.Error())
+			fmt.Println("team.Pipelines:\n", err.Error())
 		}
 		for _, pipeline := range pipelines {
 
 			resources, err := pipeline.Resources()
 			if err != nil {
-				fmt.Println("pipeline.Resources: %s\n", err.Error())
+				fmt.Println("pipeline.Resources:\n", err.Error())
 				continue
 			}
 			for _, resource := range resources {
@@ -477,7 +477,7 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 				// Get pending builds
 				pendingBuilds, err := job.GetPendingBuilds()
 				if err != nil {
-					fmt.Println("job.GetPendingBuilds: %s\n", err.Error())
+					fmt.Println("job.GetPendingBuilds:\n", err.Error())
 				}
 				for _, pendingBuild := range pendingBuilds {
 					if pendingBuild != nil {
@@ -507,7 +507,7 @@ func metricWorkers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn) {
 	dbWorkerFactory := atcDb.NewWorkerFactory(dbConn)
 	workers, err := dbWorkerFactory.Workers()
 	if err != nil {
-		fmt.Println("dbWorkerFactory.Workers: %s\n", err.Error())
+		fmt.Println("dbWorkerFactory.Workers:\n", err.Error())
 	}
 	// As our metrics are a relative status of current state. Reset all old metrics declared during
 	// the previous iteration
