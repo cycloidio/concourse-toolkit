@@ -1,5 +1,7 @@
 #!/usr/bin/env sh
 
+# Docker hub hooks
+
 echo "------ HOOK START - POST_CHECKOUT -------"
 # printenv
 echo "Use tag :"
