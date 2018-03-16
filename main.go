@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/concourse/atc/atccmd"
 	atcDb "github.com/concourse/atc/db"
 	"github.com/concourse/atc/db/encryption"
 	"github.com/concourse/atc/db/lock"
+	"github.com/concourse/flag"
 	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -164,7 +164,7 @@ func NewMetrics() *PrometheusMetrics {
 
 func connectDb() (atcDb.Conn, lock.LockFactory, error) {
 
-	psqlConfig := atccmd.PostgresConfig{Host: viper.GetString("host"), Port: uint16(viper.GetInt("port")), User: viper.GetString("user"), Password: viper.GetString("password"), Database: viper.GetString("database"), SSLMode: "disable"}
+	psqlConfig := flag.PostgresConfig{Host: viper.GetString("host"), Port: uint16(viper.GetInt("port")), User: viper.GetString("user"), Password: viper.GetString("password"), Database: viper.GetString("database"), SSLMode: "disable"}
 	fmt.Printf("DEBUG : %s\n", psqlConfig.ConnectionString())
 	var driverName = "postgres"
 
