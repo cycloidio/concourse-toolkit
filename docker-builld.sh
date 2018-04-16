@@ -12,7 +12,7 @@ go version
 
 # Get depends
 rm -rf concourse pkg/ src/ bin/
-wget -q -O concourse.tar.gz https://github.com/concourse/concourse/releases/download/v${VERSION}/concourse-${VERSION}.tgz
+wget -q -O concourse.tar.gz https://bosh.io/d/github.com/concourse/concourse?v=${VERSION}
 mkdir -p concourse && tar xf concourse.tar.gz -C concourse
 mkdir -p src && tar xf concourse/packages/atc.tgz -C src/
 go get "github.com/spf13/cobra"

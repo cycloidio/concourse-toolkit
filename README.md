@@ -3,7 +3,7 @@
 
 ```bash
 export VERSION=3.9.1
-wget -O concourse.tar.gz https://github.com/concourse/concourse/releases/download/v${VERSION}/concourse-${VERSION}.tgz
+wget -O concourse.tar.gz https://bosh.io/d/github.com/concourse/concourse?v=${VERSION}
 mkdir -p concourse && tar xf concourse.tar.gz -C concourse
 mkdir -p mkdir src && tar xf concourse/packages/atc.tgz -C src/
 go get "github.com/spf13/cobra"
@@ -34,9 +34,10 @@ PGPASSWORD=concourse psql -h localhost --user super  concourse -c "select * from
 
 ```
 
-# Build docker image
+# Manual build of the docker image
 
 ```
-sudo docker build . -t gaell/concourse-toolkit:${VERSION}
-sudo docker push gaell/concourse-toolkit:${VERSION}
+echo ${VERSION} > TAG
+sudo docker build . -t gaell/concourse-toolkit:v${VERSION}
+sudo docker push gaell/concourse-toolkit:v${VERSION}
 ```
