@@ -5,5 +5,5 @@ RUN cat /src/TAG
 RUN cd /src && ./docker-builld.sh
 
 FROM scratch
-COPY --from=build-env /src/bin/concourse-toolkit bin/concourse-toolkit
+COPY --from=build-env /src/bin/concourse-toolkit /bin/concourse-toolkit
 ENTRYPOINT ["/bin/concourse-toolkit"]

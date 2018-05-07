@@ -334,11 +334,14 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	for _, container := range destroyingContainer {
 		team := defaultTeam
 		if container.Metadata().BuildID != 0 {
+
 			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
 			if err != nil {
 				fmt.Println("dbBuildFactory.Build:\n", err.Error())
 			}
-			team = build.TeamName()
+			if build != nil {
+				team = build.TeamName()
+			}
 		}
 		promMetrics.orphanedContainers.With(prometheus.Labels{
 			"team":     team,
