@@ -256,10 +256,6 @@ func (tx *dbTx) QueryRow(query string, args ...interface{}) squirrel.RowScanner 
 func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
 	dbContainerRepository := atcDb.NewContainerRepository(dbConn)
 	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory)
-	failedContainers, err := dbContainerRepository.FindFailedContainers()
-	if err != nil {
-		fmt.Println("dbContainerRepository.FindFailedContainers:\n", err.Error())
-	}
 	creatingContainer, createdContainer, destroyingContainer, err := dbContainerRepository.FindOrphanedContainers()
 	if err != nil {
 		fmt.Println("dbContainerRepository.FindOrphanedContainers:\n", err.Error())
@@ -269,26 +265,6 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	// As our metrics are a relative status of current state. Reset all old metrics declared during
 	// the previous iteration
 	promMetrics.orphanedContainers.Reset()
-
-	for _, container := range failedContainers {
-		team := defaultTeam
-		if container.Metadata().BuildID != 0 {
-			build, _, err := dbBuildFactory.Build(container.Metadata().BuildID)
-			if err != nil {
-				fmt.Println("dbBuildFactory.Build:\n", err.Error())
-			}
-			team = build.TeamName()
-		}
-		promMetrics.orphanedContainers.With(prometheus.Labels{
-			"team":     team,
-			"pipeline": container.Metadata().PipelineName,
-			"job":      container.Metadata().JobName,
-			"worker":   container.WorkerName(),
-			"type":     string(container.Metadata().Type),
-			"status":   "failed",
-		}).Inc()
-
-	}
 
 	for _, container := range creatingContainer {
 		team := defaultTeam
