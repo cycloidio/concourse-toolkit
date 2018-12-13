@@ -142,6 +142,7 @@ func NewMetrics() *PrometheusMetrics {
 			"version",
 			"state",
 			"team",
+			"ephemeral",
 			"start_time",
 			"platform",
 			"tags",
@@ -255,7 +256,8 @@ func (tx *dbTx) QueryRow(query string, args ...interface{}) squirrel.RowScanner 
 
 func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
 	dbContainerRepository := atcDb.NewContainerRepository(dbConn)
-	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory)
+	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory, 5*time.Minute)
+
 	creatingContainer, createdContainer, destroyingContainer, err := dbContainerRepository.FindOrphanedContainers()
 	if err != nil {
 		fmt.Println("dbContainerRepository.FindOrphanedContainers:\n", err.Error())
@@ -335,7 +337,7 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 
 func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
 
-	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory)
+	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory, 5*time.Minute)
 	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
 
 	builds, err := dbBuildFactory.GetAllStartedBuilds()
@@ -500,6 +502,7 @@ func metricWorkers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn) {
 			"version":    *worker.Version(),
 			"state":      string(worker.State()),
 			"team":       worker.TeamName(),
+			"ephemeral":  strconv.FormatBool(worker.Ephemeral()),
 			"start_time": strconv.FormatInt(worker.StartTime(), 10),
 			"platform":   worker.Platform(),
 			"tags":       strings.Join(worker.Tags(), ","),
