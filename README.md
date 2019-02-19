@@ -35,6 +35,26 @@ PGPASSWORD=concourse psql -h localhost --user super  concourse -c "select * from
 
 ```
 
+# Run a Concourse using the database
+
+```bash
+mkdir keys
+ssh-keygen -t rsa -b 4096 -f keys/tsa_host_key -N ''
+ssh-keygen -t rsa -b 4096 -f keys/session_signing_key -N ''
+cat keys/tsa_host_key > keys/authorized_worker_keys
+
+docker run -it -v $PWD/keys:/concourse-keys --net host \
+-e CONCOURSE_ADD_LOCAL_USER=concourse:concourse \
+-e CONCOURSE_MAIN_TEAM_LOCAL_USER=concourse \
+-e CONCOURSE_BIND_PORT=8080 \
+-e CONCOURSE_EXTERNAL_URL="http://localhost:8080" \
+-e CONCOURSE_POSTGRES_HOST=localhost \
+-e CONCOURSE_POSTGRES_USER=super \
+-e CONCOURSE_POSTGRES_PASSWORD=concourse \
+-e CONCOURSE_POSTGRES_DATABASE=concourse \
+concourse/concourse:4.2.3 web
+```
+
 # Manual build of the docker image
 
 ```
