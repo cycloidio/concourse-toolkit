@@ -59,6 +59,6 @@ concourse/concourse:4.2.3 web
 
 ```
 echo ${VERSION} > TAG
-sudo docker build . -t gaell/concourse-toolkit:v${VERSION}
-sudo docker push gaell/concourse-toolkit:v${VERSION}
+sudo docker build . -t cycloid/concourse-toolkit:v${VERSION}
+sudo docker push cycloid/concourse-toolkit:v${VERSION}
 ```
