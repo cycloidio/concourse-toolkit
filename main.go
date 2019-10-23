@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"code.cloudfoundry.org/lager"
 	"github.com/Masterminds/squirrel"
-	atcDb "github.com/concourse/atc/db"
-	"github.com/concourse/atc/db/encryption"
-	"github.com/concourse/atc/db/lock"
+	atcDb "github.com/concourse/concourse/atc/db"
+	"github.com/concourse/concourse/atc/db/encryption"
+	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/flag"
 	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,6 +40,7 @@ type PrometheusMetrics struct {
 	runningTasks       *prometheus.GaugeVec
 	orphanedContainers *prometheus.GaugeVec
 	workers            *prometheus.GaugeVec
+	workersActiveTasks *prometheus.GaugeVec
 }
 
 func NewMetrics() *PrometheusMetrics {
@@ -57,11 +59,14 @@ func NewMetrics() *PrometheusMetrics {
 			"job",
 			"pipeline_paused",
 			"start_time",
+			"isManuallyTriggered",
+			"isScheduled",
 			"end_time",
 			"status",
 			"name",
 		},
 	)
+
 	prometheus.MustRegister(builds)
 
 	resources := prometheus.NewGaugeVec(
@@ -78,6 +83,7 @@ func NewMetrics() *PrometheusMetrics {
 			"pipeline_paused",
 			"type",
 			"failing_to_check",
+			"checkEvery",
 			"name",
 		},
 	)
@@ -103,6 +109,8 @@ func NewMetrics() *PrometheusMetrics {
 			"start_time",
 			"step",
 			"worker",
+			"isManuallyTriggered",
+			"isScheduled",
 			"build_status",
 			"build",
 			"type",
@@ -150,12 +158,34 @@ func NewMetrics() *PrometheusMetrics {
 	)
 	prometheus.MustRegister(workers)
 
+	workersActiveTasks := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "concourse_toolkit",
+			// Subsystem:   "builds",
+			Name:        "workers_active_tasks",
+			Help:        ".",
+			ConstLabels: prometheus.Labels{"exporter": "concourse-toolkit"},
+		},
+		[]string{
+			"name",
+			"version",
+			"state",
+			"team",
+			"ephemeral",
+			"start_time",
+			"platform",
+			"tags",
+		},
+	)
+	prometheus.MustRegister(workersActiveTasks)
+
 	return &PrometheusMetrics{
 		builds:             builds,
 		resources:          resources,
 		runningTasks:       runningTasks,
 		orphanedContainers: orphanedContainers,
 		workers:            workers,
+		workersActiveTasks: workersActiveTasks,
 	}
 }
 
@@ -197,7 +227,8 @@ func connectDb() (atcDb.Conn, lock.LockFactory, error) {
 	lockConn.SetMaxOpenConns(10)
 	lockConn.SetMaxIdleConns(2)
 	lockConn.SetConnMaxLifetime(0)
-	lockFactory := lock.NewLockFactory(lockConn)
+	var fakeLogFunc = func(logger lager.Logger, id lock.LockID) {}
+	lockFactory := lock.NewLockFactory(lockConn, fakeLogFunc, fakeLogFunc)
 
 	return dbConn, lockFactory, nil
 }
@@ -356,15 +387,17 @@ func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockF
 		}
 		for _, container := range containers {
 			promMetrics.runningTasks.With(prometheus.Labels{
-				"team":         build.TeamName(),
-				"pipeline":     build.PipelineName(),
-				"job":          build.JobName(),
-				"start_time":   build.StartTime().String(),
-				"build":        build.Name(),
-				"worker":       container.WorkerName(),
-				"build_status": string(build.Status()),
-				"step":         container.Metadata().StepName,
-				"type":         string(container.Metadata().Type),
+				"team":                build.TeamName(),
+				"pipeline":            build.PipelineName(),
+				"job":                 build.JobName(),
+				"start_time":          build.StartTime().String(),
+				"build":               build.Name(),
+				"isManuallyTriggered": strconv.FormatBool(build.IsManuallyTriggered()),
+				"isScheduled":         strconv.FormatBool(build.IsScheduled()),
+				"worker":              container.WorkerName(),
+				"build_status":        string(build.Status()),
+				"step":                container.Metadata().StepName,
+				"type":                string(container.Metadata().Type),
 			}).Set(1)
 		}
 	}
@@ -398,7 +431,7 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 			}
 			for _, resource := range resources {
 				failingToCheck := float64(0)
-				if resource.FailingToCheck() {
+				if resource.CheckError != nil {
 					failingToCheck = 1
 				}
 				promMetrics.resources.With(prometheus.Labels{
@@ -406,7 +439,8 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 					"pipeline":         resource.PipelineName(),
 					"pipeline_paused":  strconv.FormatBool(pipeline.Paused()),
 					"type":             resource.Type(),
-					"failing_to_check": strconv.FormatBool(resource.FailingToCheck()),
+					"checkEvery":       resource.CheckEvery(),
+					"failing_to_check": strconv.FormatFloat(failingToCheck, 'f', 6, 64),
 					"name":             resource.Name(),
 				}).Set(failingToCheck)
 			}
@@ -429,14 +463,16 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 					// fmt.Println("  -  NextBuild (Running)", job.Name(), nextBuild.Name(), nextBuild.Status())
 					floatBuildName, _ := strconv.ParseFloat(nextBuild.Name(), 64)
 					promMetrics.builds.With(prometheus.Labels{
-						"team":            job.TeamName(),
-						"pipeline":        job.PipelineName(),
-						"pipeline_paused": strconv.FormatBool(pipeline.Paused()),
-						"job":             job.Name(),
-						"status":          string(nextBuild.Status()),
-						"start_time":      nextBuild.StartTime().String(),
-						"end_time":        nextBuild.EndTime().String(),
-						"name":            nextBuild.Name(),
+						"team":                job.TeamName(),
+						"pipeline":            job.PipelineName(),
+						"pipeline_paused":     strconv.FormatBool(pipeline.Paused()),
+						"isManuallyTriggered": strconv.FormatBool(nextBuild.IsManuallyTriggered()),
+						"isScheduled":         strconv.FormatBool(nextBuild.IsScheduled()),
+						"job":                 job.Name(),
+						"status":              string(nextBuild.Status()),
+						"start_time":          nextBuild.StartTime().String(),
+						"end_time":            nextBuild.EndTime().String(),
+						"name":                nextBuild.Name(),
 					}).Set(floatBuildName)
 				}
 
@@ -445,14 +481,16 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 					// fmt.Println("  - ", job.Name(), build.Name(), build.Status())
 					floatBuildName, _ := strconv.ParseFloat(build.Name(), 64)
 					promMetrics.builds.With(prometheus.Labels{
-						"team":            job.TeamName(),
-						"pipeline":        job.PipelineName(),
-						"pipeline_paused": strconv.FormatBool(pipeline.Paused()),
-						"job":             job.Name(),
-						"status":          string(build.Status()),
-						"start_time":      build.StartTime().String(),
-						"end_time":        build.EndTime().String(),
-						"name":            build.Name(),
+						"team":                job.TeamName(),
+						"pipeline":            job.PipelineName(),
+						"pipeline_paused":     strconv.FormatBool(pipeline.Paused()),
+						"job":                 job.Name(),
+						"status":              string(build.Status()),
+						"isManuallyTriggered": strconv.FormatBool(build.IsManuallyTriggered()),
+						"isScheduled":         strconv.FormatBool(build.IsScheduled()),
+						"start_time":          build.StartTime().String(),
+						"end_time":            build.EndTime().String(),
+						"name":                build.Name(),
 					}).Set(floatBuildName)
 
 				}
@@ -468,14 +506,16 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 						// fmt.Println("  -  Pending ", job.Name(), pendingBuild.Name(), pendingBuild.Status())
 						floatBuildName, _ := strconv.ParseFloat(pendingBuild.Name(), 64)
 						promMetrics.builds.With(prometheus.Labels{
-							"team":            job.TeamName(),
-							"pipeline":        job.PipelineName(),
-							"pipeline_paused": strconv.FormatBool(pipeline.Paused()),
-							"job":             job.Name(),
-							"status":          string(pendingBuild.Status()),
-							"start_time":      pendingBuild.StartTime().String(),
-							"end_time":        pendingBuild.EndTime().String(),
-							"name":            pendingBuild.Name(),
+							"team":                job.TeamName(),
+							"pipeline":            job.PipelineName(),
+							"pipeline_paused":     strconv.FormatBool(pipeline.Paused()),
+							"job":                 job.Name(),
+							"status":              string(pendingBuild.Status()),
+							"isManuallyTriggered": strconv.FormatBool(pendingBuild.IsManuallyTriggered()),
+							"isScheduled":         strconv.FormatBool(pendingBuild.IsScheduled()),
+							"start_time":          pendingBuild.StartTime().String(),
+							"end_time":            pendingBuild.EndTime().String(),
+							"name":                pendingBuild.Name(),
 						}).Set(floatBuildName)
 
 					}
@@ -503,11 +543,22 @@ func metricWorkers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn) {
 			"state":      string(worker.State()),
 			"team":       worker.TeamName(),
 			"ephemeral":  strconv.FormatBool(worker.Ephemeral()),
-			"start_time": strconv.FormatInt(worker.StartTime(), 10),
+			"start_time": worker.StartTime().String(),
 			"platform":   worker.Platform(),
 			"tags":       strings.Join(worker.Tags(), ","),
 		}).Set(float64(worker.ActiveContainers()))
 
+		activeTasks, _ := worker.ActiveTasks()
+		promMetrics.workersActiveTasks.With(prometheus.Labels{
+			"name":       worker.Name(),
+			"version":    *worker.Version(),
+			"state":      string(worker.State()),
+			"team":       worker.TeamName(),
+			"ephemeral":  strconv.FormatBool(worker.Ephemeral()),
+			"start_time": worker.StartTime().String(),
+			"platform":   worker.Platform(),
+			"tags":       strings.Join(worker.Tags(), ","),
+		}).Set(float64(activeTasks))
 	}
 }
 

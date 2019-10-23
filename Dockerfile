@@ -1,9 +1,9 @@
-FROM golang:1.9 AS build-env
+FROM golang:1.12 AS build-env
 RUN apt-get install make
-ADD . /src
-RUN cat /src/TAG
-RUN cd /src && ./docker-builld.sh
+ADD . /go/concourse-toolkit
+RUN cat /go/concourse-toolkit/TAG
+RUN cd /go/concourse-toolkit && ./docker-builld.sh
 
 FROM scratch
-COPY --from=build-env /src/bin/concourse-toolkit /bin/concourse-toolkit
+COPY --from=build-env /go/bin/concourse-toolkit /bin/concourse-toolkit
 ENTRYPOINT ["/bin/concourse-toolkit"]
