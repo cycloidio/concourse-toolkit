@@ -11,7 +11,6 @@ import (
 )
 
 const ConfigVersionHeader = "X-Concourse-Config-Version"
-const DefaultPipelineName = "main"
 const DefaultTeamName = "main"
 
 type Tags []string

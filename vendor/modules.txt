@@ -8,7 +8,7 @@ github.com/beorn7/perks/quantile
 github.com/bmizerany/pat
 # github.com/cenkalti/backoff v2.1.1+incompatible
 github.com/cenkalti/backoff
-# github.com/concourse/concourse v0.0.0-20191002031328-f2859f7ef1d8
+# github.com/concourse/concourse v0.0.0-20191115202213-d5e58a48cad6
 github.com/concourse/concourse/atc/db
 github.com/concourse/concourse/atc/db/encryption
 github.com/concourse/concourse/atc/db/lock

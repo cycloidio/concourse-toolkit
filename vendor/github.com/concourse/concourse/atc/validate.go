@@ -25,8 +25,8 @@ type ConfigWarning struct {
 }
 
 func (c Config) Validate() ([]ConfigWarning, []string) {
-	warnings := []ConfigWarning{}
-	errorMessages := []string{}
+	var warnings []ConfigWarning
+	var errorMessages []string
 
 	groupsErr := validateGroups(c)
 	if groupsErr != nil {
@@ -53,7 +53,7 @@ func (c Config) Validate() ([]ConfigWarning, []string) {
 }
 
 func validateGroups(c Config) error {
-	errorMessages := []string{}
+	var errorMessages []string
 
 	jobsGrouped := make(map[string]bool)
 	groupNames := make(map[string]int)
@@ -109,7 +109,7 @@ func validateGroups(c Config) error {
 }
 
 func validateResources(c Config) error {
-	errorMessages := []string{}
+	var errorMessages []string
 
 	names := map[string]int{}
 
@@ -145,7 +145,7 @@ func validateResources(c Config) error {
 }
 
 func validateResourceTypes(c Config) error {
-	errorMessages := []string{}
+	var errorMessages []string
 
 	names := map[string]int{}
 
@@ -208,8 +208,8 @@ func usedResources(c Config) map[string]bool {
 }
 
 func validateJobs(c Config) ([]ConfigWarning, error) {
-	errorMessages := []string{}
-	warnings := []ConfigWarning{}
+	var errorMessages []string
+	var warnings []ConfigWarning
 
 	names := map[string]int{}
 
@@ -257,6 +257,18 @@ func validateJobs(c Config) ([]ConfigWarning, error) {
 				errorMessages = append(
 					errorMessages,
 					identifier+fmt.Sprintf(" has negative build_log_retention.days: %d", job.BuildLogRetention.Days),
+				)
+			}
+			if job.BuildLogRetention.MinimumSucceededBuilds < 0 {
+				errorMessages = append(
+					errorMessages,
+					identifier+fmt.Sprintf(" has negative build_log_retention.min_success_builds: %d", job.BuildLogRetention.MinimumSucceededBuilds),
+				)
+			}
+			if job.BuildLogRetention.Builds > 0 && job.BuildLogRetention.MinimumSucceededBuilds > job.BuildLogRetention.Builds {
+				errorMessages = append(
+					errorMessages,
+					identifier+fmt.Sprintf(" has build_log_retention.min_success_builds: %d greater than build_log_retention.min_success_builds: %d", job.BuildLogRetention.MinimumSucceededBuilds, job.BuildLogRetention.Builds),
 				)
 			}
 		}
@@ -383,8 +395,8 @@ func validatePlan(c Config, identifier string, plan PlanConfig) ([]ConfigWarning
 		return []ConfigWarning{}, []string{message}
 	}
 
-	errorMessages := []string{}
-	warnings := []ConfigWarning{}
+	var errorMessages []string
+	var warnings []ConfigWarning
 
 	switch {
 	case plan.Do != nil:
@@ -614,8 +626,8 @@ func validatePlan(c Config, identifier string, plan PlanConfig) ([]ConfigWarning
 }
 
 func validateInapplicableFields(inapplicableFields []string, plan PlanConfig, identifier string) []string {
-	errorMessages := []string{}
-	foundInapplicableFields := []string{}
+	var errorMessages []string
+	var foundInapplicableFields []string
 
 	for _, field := range inapplicableFields {
 		switch field {
