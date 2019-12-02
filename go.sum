@@ -76,6 +76,8 @@ github.com/concourse/concourse v0.0.0-20191002031328-f2859f7ef1d8 h1:E+uSqCgqoMe
 github.com/concourse/concourse v0.0.0-20191002031328-f2859f7ef1d8/go.mod h1:t6D2Fg1kXpg/AxQB4bbwfEr1EhxfU6InUFg0sZXwxzM=
 github.com/concourse/concourse v0.0.0-20191115202213-d5e58a48cad6 h1:hRkUKiriv2Vz5YCO+Sg6XI8NkHU/1aO6l/XsEr0aZng=
 github.com/concourse/concourse v0.0.0-20191115202213-d5e58a48cad6/go.mod h1:rNwqnQsbyri/FiR1VMTyl+0Un/YohksNFLrMWqekVkM=
+github.com/concourse/concourse v0.0.0-20191128161415-4329a6b33629 h1:p344jHYTAnMXdJj1YKL5kpLRjdewwpRQHTFYdoc/RMs=
+github.com/concourse/concourse v0.0.0-20191128161415-4329a6b33629/go.mod h1:wXY3cw8isMNlmW7Qnw227z/3LvgjyTGtETbAfWO0IpI=
 github.com/concourse/dex v0.0.0-20190417202333-2202f4ef4172/go.mod h1:jq+kdbXyj+bEdch50oYfPCNK4ZCRKAd/R0wlZuAG+Gc=
 github.com/concourse/flag v0.0.0-20180907155614-cb47f24fff1c/go.mod h1:ngs845OZCESOe8vgeK5fsCNIiS0vUSqB8MGQMS9+4og=
 github.com/concourse/flag v1.0.0 h1:XG+A/Y+8kNdNDUC9T+SQ55dZ1+xYQN6LNVBg3cGJ080=
@@ -446,6 +448,8 @@ golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACk
 golang.org/x/crypto v0.0.0-20190605123033-f99c8df09eb5/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/crypto v0.0.0-20190829043050-9756ffdc2472 h1:Gv7RPwsi3eZ2Fgewe3CBsuOebPwO27PoXzRpJPsvSSM=
 golang.org/x/crypto v0.0.0-20190829043050-9756ffdc2472/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
+golang.org/x/crypto v0.0.0-20191119213627-4f8c1d86b1ba h1:9bFeDpN3gTqNanMVqNcoR/pJQuP5uroC3t1D7eXozTE=
+golang.org/x/crypto v0.0.0-20191119213627-4f8c1d86b1ba/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=
 golang.org/x/exp v0.0.0-20190121172915-509febef88a4/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
 golang.org/x/exp v0.0.0-20190510132918-efd6b22b2522/go.mod h1:ZjyILWgesfNpC6sMxTJOJm9Kp84zZh5NQWvqDGG3Qr8=
 golang.org/x/image v0.0.0-20190227222117-0694c2d4d067/go.mod h1:kZ7UVZpmo3dzQBMxlp+ypCbDeSB+sBbTgSJuh5dn5js=
