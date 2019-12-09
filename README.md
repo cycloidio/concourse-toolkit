@@ -9,7 +9,7 @@ export GOPATH=$(mktemp -d)
 # Update CC version
 
 ```
-export VERSION=5.6.0
+export VERSION=5.7.2
 
 go get github.com/concourse/concourse/atc@v$VERSION
 go get github.com/concourse/concourse/go-concourse/concourse@v$VERSION
@@ -20,7 +20,7 @@ go mod vendor
 
 ```bash
 # Run a psql server to test it against it
-docker run --rm --name psql -p 5432:5432 -e POSTGRES_PASSWORD=concourse -e POSTGRES_USER=super -e POSTGRES_DB=concourse postgres:9.6.5
+docker run --rm --name psql -p 5432:5432 -e POSTGRES_PASSWORD=concourse -e POSTGRES_USER=super -e POSTGRES_DB=concourse postgres:10
 
 # Inject a dump of your concourse database
 PGPASSWORD=concourse psql -h localhost --user super  concourse -f db.sql
@@ -55,7 +55,7 @@ docker run -it --rm --name concourse-web -v $PWD/keys:/concourse-keys -p 8080:80
 -e CONCOURSE_POSTGRES_PASSWORD=concourse \
 -e CONCOURSE_POSTGRES_DATABASE=concourse \
 -e CONCOURSE_CLUSTER_NAME=dev \
-concourse/concourse:5.6.0 web
+concourse/concourse:5.7.2 web
 ```
 
 # Manual build of the docker image
@@ -80,7 +80,7 @@ docker run -it -v $PWD/keys:/concourse-keys --privileged --link concourse-web:co
 -e CONCOURSE_BAGGAGECLAIM_BIND_IP=127.0.0.1 \
 -e CONCOURSE_TSA_PUBLIC_KEY=/concourse-keys/tsa_host_key.pub \
 -e CONCOURSE_TSA_WORKER_PRIVATE_KEY=/concourse-keys/tsa_host_key \
-concourse/concourse:5.6.0 worker
+concourse/concourse:5.7.2 worker
 
 # Test it with fly
 fly --target gael-dev login -n main --concourse-url http://localhost:8080 -k -u concourse  -p concourse
