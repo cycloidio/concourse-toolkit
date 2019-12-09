@@ -2,19 +2,22 @@ package main
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"strconv"
 	"strings"
 	"time"
 
-	"code.cloudfoundry.org/lager"
 	"github.com/Masterminds/squirrel"
 	atcDb "github.com/concourse/concourse/atc/db"
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/flag"
+	multierror "github.com/hashicorp/go-multierror"
 	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -192,43 +195,54 @@ func NewMetrics() *PrometheusMetrics {
 //
 // Concourse Database connect
 //
+type connectionRetryingDriver struct {
+	driver.Driver
+	driverName string
+}
 
 func connectDb() (atcDb.Conn, lock.LockFactory, error) {
+	var retryingDriverName = "too-many-connections-retrying"
 
 	psqlConfig := flag.PostgresConfig{Host: viper.GetString("host"), Port: uint16(viper.GetInt("port")), User: viper.GetString("user"), Password: viper.GetString("password"), Database: viper.GetString("database"), SSLMode: "disable"}
 	fmt.Printf("DEBUG : %s\n", psqlConfig.ConnectionString())
 	var driverName = "postgres"
-
+	var maxConn = 15
 	// Mix from atccmd.constructDBConn adn db.Open
 	// Copy paste of db struct from https://github.com/concourse/atc/blob/master/db/open.go#L318
 	// We previously used constructDBConn from https://github.com/concourse/atc/blob/master/atccmd/command.go#L905 which called Open from https://github.com/concourse/atc/blob/master/db/open.go#L57
 	//But we moved aways because this methode force a db migrate on concourse side. We don't want that.
+	SetupConnectionRetryingDriver(
+		"postgres",
+		psqlConfig.ConnectionString(),
+		retryingDriverName,
+	)
+
+	lockConn, err := sql.Open(driverName, psqlConfig.ConnectionString())
+	if err != nil {
+		return nil, nil, err
+	}
+	lockConn.SetMaxOpenConns(1)
+	lockConn.SetMaxIdleConns(1)
+	lockConn.SetConnMaxLifetime(0)
+
+	// lockFactory := lock.NewLockFactory(lockConn, metric.LogLockAcquired, metric.LogLockReleased)
+	lockFactory := lock.NewLockFactory(lockConn, nil, nil)
+
 	sqlDb, err := sql.Open(driverName, psqlConfig.ConnectionString())
 	if err != nil {
 		return nil, nil, err
 	}
-	sqlDb.SetMaxOpenConns(32)
 
-	listener := pq.NewListener(psqlConfig.ConnectionString(), time.Second, time.Minute, nil)
-	var strategy encryption.Strategy = encryption.NewNoEncryption()
-
+	listener := pq.NewDialListener(keepAliveDialer{}, psqlConfig.ConnectionString(), time.Second, time.Minute, nil)
+	strategy := encryption.NewNoEncryption()
 	dbConn := &db{
 		DB:         sqlDb,
 		bus:        atcDb.NewNotificationsBus(listener, sqlDb),
 		encryption: strategy,
 		name:       "concourse-toolkit",
 	}
-
-	// atccmd.constructLockConn Copied private methodes constructLockConn from https://github.com/concourse/atc/blob/master/atccmd/command.go#L907
-	lockConn, err := sql.Open(driverName, psqlConfig.ConnectionString())
-	if err != nil {
-		return nil, nil, err
-	}
-	lockConn.SetMaxOpenConns(10)
-	lockConn.SetMaxIdleConns(2)
-	lockConn.SetConnMaxLifetime(0)
-	var fakeLogFunc = func(logger lager.Logger, id lock.LockID) {}
-	lockFactory := lock.NewLockFactory(lockConn, fakeLogFunc, fakeLogFunc)
+	dbConn.SetMaxOpenConns(maxConn)
+	dbConn.SetMaxIdleConns(maxConn / 2)
 
 	return dbConn, lockFactory, nil
 }
@@ -237,22 +251,59 @@ func connectDb() (atcDb.Conn, lock.LockFactory, error) {
 // Copy paste of private concourse structures to be able to provide the expected dbConn expected format. (used in connectDb)
 //
 
+// From atc/db/connection_retrying_driver.go
+func SetupConnectionRetryingDriver(
+	delegateDriverName string,
+	sqlDataSource string,
+	newDriverName string,
+) {
+	for _, driverName := range sql.Drivers() {
+		if driverName == newDriverName {
+			return
+		}
+	}
+	delegateDBConn, err := sql.Open(delegateDriverName, sqlDataSource)
+	if err == nil {
+		// ignoring any connection errors since we only need this to access the driver struct
+		_ = delegateDBConn.Close()
+	}
+
+	connectionRetryingDriver := &connectionRetryingDriver{
+		delegateDBConn.Driver(),
+		delegateDriverName,
+	}
+	sql.Register(newDriverName, connectionRetryingDriver)
+}
+
+// concourse/atc/db/keepalive_dialer.go
+type keepAliveDialer struct {
+}
+
+func (d keepAliveDialer) Dial(network, address string) (net.Conn, error) {
+	dialer := &net.Dialer{
+		KeepAlive: 15 * time.Second,
+	}
+
+	return dialer.Dial(network, address)
+}
+
+func (d keepAliveDialer) DialTimeout(network, address string, timeout time.Duration) (net.Conn, error) {
+	dialer := &net.Dialer{
+		KeepAlive: 15 * time.Second,
+		Timeout:   timeout,
+	}
+
+	return dialer.Dial(network, address)
+}
+
 // Those are just copy paste adapting some path cause of includes : eg NotificationsBus -> atcDb.NotificationsBus
+
 type db struct {
 	*sql.DB
 
 	bus        atcDb.NotificationsBus
 	encryption encryption.Strategy
 	name       string
-}
-
-func (db *db) Begin() (atcDb.Tx, error) {
-	tx, err := db.DB.Begin()
-	if err != nil {
-		return nil, err
-	}
-
-	return &dbTx{tx, atcDb.GlobalConnectionTracker.Track()}, nil
 }
 
 func (db *db) Name() string {
@@ -266,6 +317,53 @@ func (db *db) Bus() atcDb.NotificationsBus {
 func (db *db) EncryptionStrategy() encryption.Strategy {
 	return db.encryption
 }
+
+func (db *db) Close() error {
+	var errs error
+	dbErr := db.DB.Close()
+	if dbErr != nil {
+		errs = multierror.Append(errs, dbErr)
+	}
+
+	busErr := db.bus.Close()
+	if busErr != nil {
+		errs = multierror.Append(errs, busErr)
+	}
+
+	return errs
+}
+
+// Close ignores errors, and should used with defer.
+// makes errcheck happy that those errs are captured
+func Close(c io.Closer) {
+	_ = c.Close()
+}
+
+func (db *db) Begin() (atcDb.Tx, error) {
+	tx, err := db.DB.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	return &dbTx{tx, atcDb.GlobalConnectionTracker.Track()}, nil
+}
+
+func (db *db) Exec(query string, args ...interface{}) (sql.Result, error) {
+	defer atcDb.GlobalConnectionTracker.Track().Release()
+	return db.DB.Exec(query, args...)
+}
+
+func (db *db) Prepare(query string) (*sql.Stmt, error) {
+	defer atcDb.GlobalConnectionTracker.Track().Release()
+	return db.DB.Prepare(query)
+}
+
+func (db *db) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	defer atcDb.GlobalConnectionTracker.Track().Release()
+	return db.DB.Query(query, args...)
+}
+
+// to conform to squirrel.Runner interface
 func (db *db) QueryRow(query string, args ...interface{}) squirrel.RowScanner {
 	defer atcDb.GlobalConnectionTracker.Track().Release()
 	return db.DB.QueryRow(query, args...)
@@ -277,17 +375,40 @@ type dbTx struct {
 	session *atcDb.ConnectionSession
 }
 
+// to conform to squirrel.Runner interface
 func (tx *dbTx) QueryRow(query string, args ...interface{}) squirrel.RowScanner {
 	return tx.Tx.QueryRow(query, args...)
+}
+
+func (tx *dbTx) Commit() error {
+	defer tx.session.Release()
+	return tx.Tx.Commit()
+}
+
+func (tx *dbTx) Rollback() error {
+	defer tx.session.Release()
+	return tx.Tx.Rollback()
+}
+
+// Rollback ignores errors, and should be used with defer.
+// makes errcheck happy that those errs are captured
+func Rollback(tx atcDb.Tx) {
+	_ = tx.Rollback()
+}
+
+type nonOneRowAffectedError struct {
+	RowsAffected int64
+}
+
+func (err nonOneRowAffectedError) Error() string {
+	return fmt.Sprintf("expected 1 row to be updated; got %d", err.RowsAffected)
 }
 
 //
 // Concourse toolkit
 //
 
-func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
-	dbContainerRepository := atcDb.NewContainerRepository(dbConn)
-	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory, 5*time.Minute)
+func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbContainerRepository atcDb.ContainerRepository, dbBuildFactory atcDb.BuildFactory) {
 
 	creatingContainer, createdContainer, destroyingContainer, err := dbContainerRepository.FindOrphanedContainers()
 	if err != nil {
@@ -366,10 +487,7 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 
 }
 
-func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
-
-	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory, 5*time.Minute)
-	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
+func metricRunningTasks(promMetrics *PrometheusMetrics, dbBuildFactory atcDb.BuildFactory, teamFactory atcDb.TeamFactory) {
 
 	builds, err := dbBuildFactory.GetAllStartedBuilds()
 	if err != nil {
@@ -404,9 +522,8 @@ func metricRunningTasks(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockF
 	return
 }
 
-func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
+func metricBuildsAndResources(promMetrics *PrometheusMetrics, teamFactory atcDb.TeamFactory) {
 
-	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
 	teams, err := teamFactory.GetTeams()
 	if err != nil {
 		fmt.Println("atcDb.NewTeamFactory:\n", err.Error())
@@ -525,9 +642,8 @@ func metricBuildsAndResources(promMetrics *PrometheusMetrics, dbConn atcDb.Conn,
 	}
 }
 
-func metricWorkers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn) {
+func metricWorkers(promMetrics *PrometheusMetrics, dbWorkerFactory atcDb.WorkerFactory) {
 
-	dbWorkerFactory := atcDb.NewWorkerFactory(dbConn)
 	workers, err := dbWorkerFactory.Workers()
 	if err != nil {
 		fmt.Println("dbWorkerFactory.Workers:\n", err.Error())
@@ -562,11 +678,12 @@ func metricWorkers(promMetrics *PrometheusMetrics, dbConn atcDb.Conn) {
 	}
 }
 
-func getSomeMetrics(promMetrics *PrometheusMetrics, dbConn atcDb.Conn, lockFactory lock.LockFactory) {
-	metricWorkers(promMetrics, dbConn)
-	metricBuildsAndResources(promMetrics, dbConn, lockFactory)
-	metricRunningTasks(promMetrics, dbConn, lockFactory)
-	metricOrphanedContainers(promMetrics, dbConn, lockFactory)
+func getSomeMetrics(promMetrics *PrometheusMetrics, dbWorkerFactory atcDb.WorkerFactory, teamFactory atcDb.TeamFactory, dbContainerRepository atcDb.ContainerRepository, dbBuildFactory atcDb.BuildFactory) {
+
+	metricWorkers(promMetrics, dbWorkerFactory)
+	metricBuildsAndResources(promMetrics, teamFactory)
+	metricRunningTasks(promMetrics, dbBuildFactory, teamFactory)
+	metricOrphanedContainers(promMetrics, dbContainerRepository, dbBuildFactory)
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -589,8 +706,13 @@ func run(cmd *cobra.Command, args []string) {
 
 	promMetrics := NewMetrics()
 
+	dbWorkerFactory := atcDb.NewWorkerFactory(dbConn)
+	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
+	dbContainerRepository := atcDb.NewContainerRepository(dbConn)
+	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory, 5*time.Minute)
+
 	for {
-		getSomeMetrics(promMetrics, dbConn, lockFactory)
+		getSomeMetrics(promMetrics, dbWorkerFactory, teamFactory, dbContainerRepository, dbBuildFactory)
 		time.Sleep(60 * time.Second)
 	}
 }
@@ -600,14 +722,16 @@ func main() {
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("CONCOURSE_TOOLKIT")
 
+	// // memory debug pprof
+	// go func() {
+	// 	log.Println(http.ListenAndServe("localhost:6060", nil))
+	// }()
+
 	var rootCmd = &cobra.Command{
 		Short: "Concourse toolkit metrics",
 		Long: `Concourse toolkit is here to debug and expose concourse internal metrics.\n
 Each option could be used in uppercase as envvar prefixed by CONCOURSE_TOOLKIT. Eg CONCOURSE_TOOLKIT_HOST.`,
-		Run: run,
-
-		// Run: func(cmd *cobra.Command, args []string) {
-		// },
+		Run:              run,
 		TraverseChildren: true}
 
 	// Can use env var like CONCOURSE_TOOLKIT=127.0.0.1
@@ -640,189 +764,3 @@ Each option could be used in uppercase as envvar prefixed by CONCOURSE_TOOLKIT. 
 	rootCmd.Execute()
 
 }
-
-// Dump of code :
-
-// func ShowTeams(dbConn atcDb.Conn, lockFactory lock.LockFactory) {
-// 	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
-// 	teams, _ := teamFactory.GetTeams()
-//
-// 	for _, team := range teams {
-// 		//debug filter
-// 		if team.Name() != "pages-jaunes" {
-// 			continue
-// 		}
-//
-// 		fmt.Println("### Team : ", team.Name())
-//
-// 		// Workers for a team
-// 		// fmt.Println("# Workers : ")
-// 		// workers, _ := team.Workers()
-// 		// for _, worker := range workers {
-// 		// 	fmt.Println(worker.Name(), worker.State())
-// 		// }
-//
-// 		fmt.Println("# Pipelines : ")
-// 		pipelines, _ := team.Pipelines()
-// 		for _, pipeline := range pipelines {
-//
-// 			fmt.Println(" * ", pipeline.Name())
-// 			jobs, err := pipeline.Jobs()
-// 			if err != nil {
-// 				fmt.Println(err)
-// 				continue
-// 			}
-// 			for _, job := range jobs {
-// 				build, nextBuild, err := job.FinishedAndNextBuild()
-// 				if err != nil {
-// 					fmt.Println(err)
-// 					continue
-// 				}
-//
-// 				// This seems also to show running jobs
-// 				if nextBuild != nil {
-// 					// No last build status
-// 					fmt.Println("  -  NextBuild (Running)", job.Name(), nextBuild.Name(), nextBuild.Status())
-// 					containers, _ := team.FindContainersByMetadata(atcDb.ContainerMetadata{PipelineID: pipeline.ID(), JobID: job.ID(), BuildID: nextBuild.ID()})
-// 					for _, container := range containers {
-// 						fmt.Println(container.ID(), container.WorkerName(), container.Metadata())
-// 					}
-//
-// 				}
-//
-// 				if build != nil {
-// 					// if (build != nil) && (build.Status() != "succeeded") {
-// 					fmt.Println("  - ", job.Name(), build.Name(), build.Status())
-//
-// 				}
-//
-// 				pendingBuilds, err := job.GetPendingBuilds()
-// 				for _, pendingBuild := range pendingBuilds {
-// 					if pendingBuild != nil {
-// 						// No last build status
-// 						fmt.Println("  -  Pending ", job.Name(), pendingBuild.Name(), pendingBuild.Status())
-// 					}
-// 				}
-// 				// runningBuilds, err := job.GetRunningBuildsBySerialGroup([]string{job.Name()})
-// 				// for _, runningBuild := range runningBuilds {
-// 				// 	if runningBuild != nil {
-// 				// 		// No last build status
-// 				// 		fmt.Println("  -  Running ", job.Name(), runningBuild.Name(), runningBuild.Status())
-// 				// 	}
-// 				// }
-//
-// 			}
-// 		}
-//
-// 	}
-// 	return
-// }
-//
-// // OrphanedContainers
-// func ShowContainers(dbConn atcDb.Conn, lockFactory lock.LockFactory) {
-// 	dbContainerRepository := atcDb.NewContainerRepository(dbConn)
-// 	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory)
-// 	failedContainers, _ := dbContainerRepository.FindFailedContainers()
-// 	creatingContainer, createdContainer, destroyingContainer, _ := dbContainerRepository.FindOrphanedContainers()
-//
-// 	fmt.Println("### Failed")
-// 	for _, container := range failedContainers {
-// 		fmt.Println(container.ID(), container.WorkerName(), container.Handle(), container.Metadata().JobName, container.Metadata().StepName)
-// 	}
-//
-// 	fmt.Println("### Creating")
-// 	for _, container := range creatingContainer {
-// 		fmt.Println(container.ID(), container.WorkerName(), container.Handle(), container.Metadata().JobName, container.Metadata().StepName)
-// 	}
-//
-// 	fmt.Println("### Created")
-// 	for _, container := range createdContainer {
-// 		build, _, _ := dbBuildFactory.Build(container.Metadata().BuildID)
-// 		if build != nil {
-// 			fmt.Println(container.ID(), container.WorkerName(), container.Handle(), container.Metadata().JobName, container.Metadata().StepName, container.Metadata().PipelineName, container.Metadata().JobName, container.Metadata().BuildName, build.Status())
-// 		} else {
-// 			fmt.Println(container.ID(), container.WorkerName(), container.Handle(), container.Metadata().JobName, container.Metadata().StepName, container.Metadata().PipelineName, container.Metadata().JobName)
-// 		}
-// 	}
-//
-// 	fmt.Println("### Destroying")
-// 	for _, container := range destroyingContainer {
-// 		fmt.Println(container.ID(), container.WorkerName(), container.Handle(), container.Metadata().JobName, container.Metadata().StepName)
-// 	}
-// }
-//
-// // Can display pipeline and end build status
-// func ShowPipelines(dbConn atcDb.Conn, lockFactory lock.LockFactory) {
-// 	dbPipelineFactory := atcDb.NewPipelineFactory(dbConn, lockFactory)
-// 	pipelines, err := dbPipelineFactory.AllPipelines()
-// 	if err != nil {
-// 		fmt.Println(err)
-// 	}
-// 	for _, pipeline := range pipelines {
-// 		fmt.Println(pipeline.TeamName(), pipeline.Name())
-// 		jobs, err := pipeline.Jobs()
-// 		if err != nil {
-// 			fmt.Println(err)
-// 			continue
-// 		}
-//
-// 		for _, job := range jobs {
-// 			// build, nextBuild, err := job.FinishedAndNextBuild()
-// 			build, _, err := job.FinishedAndNextBuild()
-// 			if err != nil {
-// 				fmt.Println(err)
-// 				continue
-// 			}
-//
-// 			if build == nil {
-// 				// No last build status
-// 				continue
-// 			} else {
-// 				if build.Status() != "succeeded" {
-// 					fmt.Println("  - ", job.Name(), build.Name(), build.Status())
-// 				}
-// 			}
-// 			// input.Metadata : all data passed to the input, like commit info for git
-// 		}
-//
-// 	}
-// 	return
-// }
-//
-// // able to display running builds and his inputs
-// func ShowBuilds(dbConn atcDb.Conn, lockFactory lock.LockFactory) {
-//
-// 	dbBuildFactory := atcDb.NewBuildFactory(dbConn, lockFactory)
-// 	teamFactory := atcDb.NewTeamFactory(dbConn, lockFactory)
-// 	builds, _ := dbBuildFactory.GetAllStartedBuilds()
-// 	for _, build := range builds {
-//
-// 		//debug filter
-// 		if build.TeamName() != "pages-jaunes" {
-// 			continue
-// 		}
-//
-// 		fmt.Println(build.ID(), build.TeamName(), build.PipelineName(), build.JobName(), build.Name(), build.Status())
-//
-// 		inputs, outputs, _ := build.Resources()
-//
-// 		fmt.Println("Inputs :")
-// 		for _, input := range inputs {
-// 			fmt.Println("  - ", input.Resource, input.Type, input.Version)
-// 			// input.Metadata : all data passed to the input, like commit info for git
-// 		}
-// 		fmt.Println("Outputs :")
-// 		for _, output := range outputs {
-// 			fmt.Println("  - ", output.Resource, output.Type, output.Version)
-// 		}
-//
-// 		fmt.Println("Containers :")
-// 		team := teamFactory.GetByID(build.TeamID())
-// 		containers, _ := team.FindContainersByMetadata(atcDb.ContainerMetadata{PipelineID: build.PipelineID(), JobID: build.JobID(), BuildID: build.ID()})
-// 		for _, container := range containers {
-// 			fmt.Println(" - ", container.ID(), container.WorkerName(), container.Metadata())
-// 		}
-//
-// 	}
-// 	return
-// }
