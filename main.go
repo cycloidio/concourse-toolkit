@@ -427,7 +427,9 @@ func metricOrphanedContainers(promMetrics *PrometheusMetrics, dbContainerReposit
 			if err != nil {
 				fmt.Println("dbBuildFactory.Build:\n", err.Error())
 			}
-			team = build.TeamName()
+			if build != nil {
+				team = build.TeamName()
+			}
 		}
 		promMetrics.orphanedContainers.With(prometheus.Labels{
 			"team":     team,
