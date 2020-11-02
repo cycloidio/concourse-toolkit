@@ -233,8 +233,17 @@ func connectDb() (atcDb.Conn, lock.LockFactory, error) {
 		return nil, nil, err
 	}
 
-	listener := pq.NewDialListener(keepAliveDialer{}, psqlConfig.ConnectionString(), time.Second, time.Minute, nil)
 	strategy := encryption.NewNoEncryption()
+	if viper.GetString("encryption-key") != "" {
+		fmt.Printf("DEBUG : Using a DB encryption key\n")
+		var cipher flag.Cipher
+		if err := cipher.UnmarshalFlag(viper.GetString("encryption-key")); err != nil {
+			return nil, nil, err
+		}
+		strategy = encryption.NewKey(cipher.AEAD)
+	}
+
+	listener := pq.NewDialListener(keepAliveDialer{}, psqlConfig.ConnectionString(), time.Second, time.Minute, nil)
 	dbConn := &db{
 		DB:         sqlDb,
 		bus:        atcDb.NewNotificationsBus(listener, sqlDb),
@@ -723,6 +732,7 @@ func main() {
 
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("CONCOURSE_TOOLKIT")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 
 	// // memory debug pprof
 	// go func() {
@@ -738,29 +748,33 @@ Each option could be used in uppercase as envvar prefixed by CONCOURSE_TOOLKIT. 
 
 	// Can use env var like CONCOURSE_TOOLKIT=127.0.0.1
 
-	// metrics-port
+	// prometheus metrics port
 	rootCmd.Flags().StringP("metrics-port", "", "9100", "Port on which expose prometheus metrics.")
 	viper.BindPFlag("metrics-port", rootCmd.Flags().Lookup("metrics-port"))
 
-	// psql host
-	rootCmd.Flags().StringP("host", "H", "127.0.0.1", "Psql host")
+	// PGSQL host
+	rootCmd.Flags().StringP("host", "H", "127.0.0.1", "PGSQL host")
 	viper.BindPFlag("host", rootCmd.Flags().Lookup("host"))
 
-	// psql user
-	rootCmd.Flags().StringP("user", "u", "super", "Psql user")
+	// PGSQL user
+	rootCmd.Flags().StringP("user", "u", "super", "PGSQL user")
 	viper.BindPFlag("user", rootCmd.Flags().Lookup("user"))
 
-	// psql user
-	rootCmd.Flags().StringP("password", "P", "concourse", "Psql password")
+	// PGSQL password
+	rootCmd.Flags().StringP("password", "P", "concourse", "PGSQL password")
 	viper.BindPFlag("password", rootCmd.Flags().Lookup("password"))
 
-	// psql user
-	rootCmd.Flags().StringP("database", "d", "concourse", "Psql database")
+	// PGSQL database
+	rootCmd.Flags().StringP("database", "d", "concourse", "PGSQL database")
 	viper.BindPFlag("database", rootCmd.Flags().Lookup("database"))
 
-	// psql user
-	rootCmd.Flags().IntP("port", "p", 5432, "Psql port")
+	// PGSQL port
+	rootCmd.Flags().IntP("port", "p", 5432, "PGSQL port")
 	viper.BindPFlag("port", rootCmd.Flags().Lookup("port"))
+
+	// concourse db encryption key
+	rootCmd.Flags().StringP("encryption-key", "k", "", "Concourse DB encryption key")
+	viper.BindPFlag("encryption-key", rootCmd.Flags().Lookup("encryption-key"))
 
 	// rootCmd.MarkFlagRequired("host")
 	rootCmd.Execute()
