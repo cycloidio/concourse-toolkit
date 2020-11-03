@@ -233,7 +233,7 @@ func connectDb() (atcDb.Conn, lock.LockFactory, error) {
 		return nil, nil, err
 	}
 
-	strategy := encryption.NewNoEncryption()
+	var strategy encryption.Strategy = encryption.NewNoEncryption()
 	if viper.GetString("encryption-key") != "" {
 		fmt.Printf("DEBUG : Using a DB encryption key\n")
 		var cipher flag.Cipher
